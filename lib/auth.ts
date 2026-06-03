@@ -18,9 +18,7 @@ const trustedOrigins = [
 
 export const auth = betterAuth({
   baseURL: appUrl,
-  secret:
-    process.env.BETTER_AUTH_SECRET ??
-    "dev_only_4J6xM2qP9vT8wL1nZ7rS3uK5cH0yD4fB",
+  secret: process.env.BETTER_AUTH_SECRET,
   database: drizzleAdapter(db, {
     provider: "sqlite",
     schema,
