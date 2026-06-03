@@ -19,16 +19,27 @@ export const LandingContent = forwardRef<HTMLElement>(function LandingContent(
           your next build <span className="block">LIVES HERE</span>
         </h1>
         <div className="flex flex-col gap-3 sm:flex-row">
-          <TransitionLink href="/login" transitionDirection="login">
-            <Button size="lg" className="min-w-36">
-              Log in
-            </Button>
-          </TransitionLink>
-          <TransitionLink href="/signup" transitionDirection="signup">
-            <Button size="lg" variant="secondary" className="min-w-36">
-              Sign up
-            </Button>
-          </TransitionLink>
+          <Button
+            nativeButton={false}
+            render={
+              <TransitionLink href="/login" transitionDirection="login" />
+            }
+            size="lg"
+            className="min-w-36"
+          >
+            Log in
+          </Button>
+          <Button
+            nativeButton={false}
+            render={
+              <TransitionLink href="/signup" transitionDirection="signup" />
+            }
+            size="lg"
+            variant="secondary"
+            className="min-w-36"
+          >
+            Sign up
+          </Button>
         </div>
       </section>
     </div>

@@ -129,9 +129,9 @@ export function LoginCard({
                 type="submit"
                 className="w-full"
                 disabled={loading || isTransitioning}
-                aria-busy={loading || isTransitioning}
+                aria-busy={loading}
               >
-                {loading || isTransitioning ? (
+                {loading ? (
                   <Spinner className="size-4" />
                 ) : (
                   "Log in"
