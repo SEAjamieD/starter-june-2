@@ -13,6 +13,9 @@ import { usePathname, useRouter } from "next/navigation";
 import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
 
+import { AuthShell } from "@/components/auth/auth-shell";
+import { LoginCard } from "@/components/auth/login-card";
+import { SignupCard } from "@/components/auth/signup-card";
 import { LandingContent } from "@/components/landing/landing-content";
 import { DitherBackdrop } from "@/components/landing/dither-backdrop";
 import { ThemeToggle } from "@/components/layout/theme-toggle";
@@ -90,10 +93,43 @@ function animateCardEnter(
   );
 }
 
+function animateCardExit(
+  element: HTMLElement,
+  reduceMotion: boolean,
+  onComplete?: () => void,
+) {
+  if (reduceMotion) {
+    gsap.set(element, { autoAlpha: 0, visibility: "hidden" });
+    onComplete?.();
+    return;
+  }
+
+  gsap.to(element, {
+    autoAlpha: 0,
+    y: 12,
+    duration: 0.35,
+    ease: "power2.in",
+    onComplete,
+  });
+}
+
 function authRouteDirection(pathname: string): SiteTransitionDirection | null {
   if (pathname === "/login") return "login";
   if (pathname === "/signup") return "signup";
   return null;
+}
+
+function AuthExitOverlay({ direction }: { direction: SiteTransitionDirection }) {
+  const Card = direction === "login" ? LoginCard : SignupCard;
+  const side = AUTH_TRANSITION[direction].panelSide === "right" ? "right" : "left";
+
+  return (
+    <div className="pointer-events-none absolute inset-0 z-30">
+      <AuthShell side={side}>
+        <Card />
+      </AuthShell>
+    </div>
+  );
 }
 
 function LandingExitOverlay({
@@ -146,11 +182,18 @@ export function SiteShell({ children }: { children: ReactNode }) {
   const [landingExitActive, setLandingExitActive] = useState(false);
   const [landingContentVersion, setLandingContentVersion] = useState(0);
   const [authCardSuppressed, setAuthCardSuppressed] = useState(false);
+  const [authExitActive, setAuthExitActive] = useState(false);
   const authCardSuppressedRef = useRef(false);
+  const authExitActiveRef = useRef(false);
 
   const syncAuthCardSuppressed = useCallback((value: boolean) => {
     authCardSuppressedRef.current = value;
     setAuthCardSuppressed(value);
+  }, []);
+
+  const syncAuthExitActive = useCallback((value: boolean) => {
+    authExitActiveRef.current = value;
+    setAuthExitActive(value);
   }, []);
 
   const syncIsTransitioning = useCallback((value: boolean) => {
@@ -190,6 +233,12 @@ export function SiteShell({ children }: { children: ReactNode }) {
         return;
       }
 
+      if (authExitActiveRef.current) {
+        gsap.set(element, { autoAlpha: 1, y: 0, visibility: "visible" });
+        tryStartReverseTimelineRef.current();
+        return;
+      }
+
       if (isTransitioningRef.current && authCardSuppressedRef.current) {
         gsap.set(element, { autoAlpha: 0, visibility: "hidden" });
         return;
@@ -206,6 +255,7 @@ export function SiteShell({ children }: { children: ReactNode }) {
   );
 
   const runAuthReverseTimelineRef = useRef<() => void>(() => {});
+  const tryStartReverseTimelineRef = useRef<() => void>(() => {});
 
   const registerLandingContent = useCallback(
     (element: HTMLElement | null) => {
@@ -214,8 +264,7 @@ export function SiteShell({ children }: { children: ReactNode }) {
 
       if (pendingReverseRef.current) {
         gsap.set(element, { autoAlpha: 0 });
-        pendingReverseRef.current = false;
-        runAuthReverseTimelineRef.current();
+        tryStartReverseTimelineRef.current();
       } else if (!isTransitioningRef.current) {
         gsap.set(element, { autoAlpha: 1 });
       }
@@ -231,15 +280,18 @@ export function SiteShell({ children }: { children: ReactNode }) {
     const { isDesktop, reduceMotion } = mediaConditionsRef.current;
     const landing = landingContentRef.current;
     const dither = ditherLayerRef.current;
+    const card = authCardRef.current;
 
     const finishReverse = () => {
       activeTimelineRef.current = null;
       syncIsTransitioning(false);
       setTransitionDirection(null);
       setLandingExitActive(false);
+      syncAuthExitActive(false);
     };
 
     if (reduceMotion) {
+      if (card) gsap.set(card, { autoAlpha: 0, visibility: "hidden" });
       if (dither) gsap.set(dither, { xPercent: 0 });
       if (landing) gsap.set(landing, { autoAlpha: 1 });
       finishReverse();
@@ -247,17 +299,28 @@ export function SiteShell({ children }: { children: ReactNode }) {
     }
 
     if (!isDesktop) {
+      const tl = gsap.timeline({
+        defaults: { ease: "power2.inOut" },
+        onComplete: finishReverse,
+      });
+
+      activeTimelineRef.current = tl;
+
+      if (card) {
+        tl.to(card, { autoAlpha: 0, y: 12, duration: 0.35, ease: "power2.in" }, 0);
+      }
+
       if (landing) {
-        gsap.set(landing, { autoAlpha: 0 });
-        gsap.to(landing, {
-          autoAlpha: 1,
-          duration: 0.35,
-          ease: "power2.out",
-          onComplete: finishReverse,
-        });
-      } else {
+        tl.fromTo(
+          landing,
+          { autoAlpha: 0, y: 12 },
+          { autoAlpha: 1, y: 0, duration: 0.35, ease: "power2.out" },
+          card ? "-=0.1" : 0,
+        );
+      } else if (!card) {
         finishReverse();
       }
+
       return;
     }
 
@@ -268,8 +331,18 @@ export function SiteShell({ children }: { children: ReactNode }) {
 
     activeTimelineRef.current = tl;
 
+    tl.addLabel("start", 0);
+
+    if (card) {
+      tl.to(
+        card,
+        { autoAlpha: 0, y: 12, duration: 0.35, ease: "power2.in" },
+        "start",
+      );
+    }
+
     if (dither) {
-      tl.to(dither, { xPercent: 0, duration: 0.6 });
+      tl.to(dither, { xPercent: 0, duration: 0.6 }, card ? "start+=0.15" : "start");
     }
 
     if (landing) {
@@ -277,12 +350,23 @@ export function SiteShell({ children }: { children: ReactNode }) {
         landing,
         { autoAlpha: 0, y: 12 },
         { autoAlpha: 1, y: 0, duration: 0.35, ease: "power2.out" },
-        "-=0.25",
+        card ? "start+=0.35" : "-=0.25",
       );
     }
-  }, [syncIsTransitioning]);
+  }, [syncIsTransitioning, syncAuthExitActive]);
 
   runAuthReverseTimelineRef.current = runAuthReverseTimeline;
+
+  const tryStartReverseTimeline = useCallback(() => {
+    if (!pendingReverseRef.current) return;
+    if (!landingContentRef.current) return;
+    if (authExitActiveRef.current && !authCardRef.current) return;
+
+    pendingReverseRef.current = false;
+    runAuthReverseTimelineRef.current();
+  }, []);
+
+  tryStartReverseTimelineRef.current = tryStartReverseTimeline;
 
   const runAuthTimeline = useCallback(
     (direction: SiteTransitionDirection) => {
@@ -385,16 +469,17 @@ export function SiteShell({ children }: { children: ReactNode }) {
       pendingReverseRef.current = true;
       syncIsTransitioning(true);
       setTransitionDirection(previousDirection);
+      syncAuthExitActive(true);
 
       if (landingContentRef.current) {
         gsap.set(landingContentRef.current, { autoAlpha: 0 });
-        pendingReverseRef.current = false;
-        runAuthReverseTimelineRef.current();
       }
+
+      tryStartReverseTimelineRef.current();
     }
 
     prevPathnameRef.current = pathname;
-  }, [pathname, landingContentVersion, landingExitActive, syncIsTransitioning]);
+  }, [pathname, landingContentVersion, landingExitActive, syncIsTransitioning, syncAuthExitActive]);
 
   useLayoutEffect(() => {
     const direction = authRouteDirection(pathname);
@@ -529,6 +614,9 @@ export function SiteShell({ children }: { children: ReactNode }) {
 
         <div className="relative z-10">
           {children}
+          {authExitActive && transitionDirection ? (
+            <AuthExitOverlay direction={transitionDirection} />
+          ) : null}
           {landingExitActive ? (
             <LandingExitOverlay registerLandingContent={registerLandingContent} />
           ) : null}
