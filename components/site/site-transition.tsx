@@ -38,6 +38,8 @@ type MediaConditions = {
 type PendingTimeline = {
   href: AuthRoute;
   direction: SiteTransitionDirection;
+  kind: "landing" | "auth-cross";
+  from?: SiteTransitionDirection;
 };
 
 type SiteTransitionContextValue = {
@@ -119,14 +121,38 @@ function authRouteDirection(pathname: string): SiteTransitionDirection | null {
   return null;
 }
 
-function AuthExitOverlay({ direction }: { direction: SiteTransitionDirection }) {
+function getAuthCrossHistoryTransition(
+  previousPath: string,
+  currentPath: string,
+): { from: SiteTransitionDirection; to: SiteTransitionDirection } | null {
+  const from = authRouteDirection(previousPath);
+  const to = authRouteDirection(currentPath);
+  if (!from || !to || from === to) return null;
+  return { from, to };
+}
+
+function AuthExitOverlay({
+  direction,
+  registerAuthExitCard,
+}: {
+  direction: SiteTransitionDirection;
+  registerAuthExitCard: (element: HTMLElement | null) => void;
+}) {
   const Card = direction === "login" ? LoginCard : SignupCard;
   const side = AUTH_TRANSITION[direction].panelSide === "right" ? "right" : "left";
+  const exitRef = useRef<HTMLDivElement>(null);
+
+  useLayoutEffect(() => {
+    registerAuthExitCard(exitRef.current);
+    return () => registerAuthExitCard(null);
+  }, [registerAuthExitCard]);
 
   return (
     <div className="pointer-events-none absolute inset-0 z-30">
       <AuthShell side={side}>
-        <Card />
+        <div ref={exitRef} className="w-full max-w-md">
+          <Card skipTransitionRegistration />
+        </div>
       </AuthShell>
     </div>
   );
@@ -156,8 +182,10 @@ export function SiteShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const shellRef = useRef<HTMLDivElement>(null);
   const ditherLayerRef = useRef<HTMLDivElement>(null);
+  const revealPanelRef = useRef<HTMLDivElement>(null);
   const landingContentRef = useRef<HTMLElement | null>(null);
   const authCardRef = useRef<HTMLElement | null>(null);
+  const authExitCardRef = useRef<HTMLElement | null>(null);
   const activeTimelineRef = useRef<gsap.core.Timeline | null>(null);
   const isTransitioningRef = useRef(false);
   const pendingTimelineRef = useRef<PendingTimeline | null>(null);
@@ -175,6 +203,14 @@ export function SiteShell({ children }: { children: ReactNode }) {
   const runAuthTimelineRef = useRef<(direction: SiteTransitionDirection) => void>(
     () => {},
   );
+  const runAuthCrossTimelineRef = useRef<
+    (
+      from: SiteTransitionDirection,
+      to: SiteTransitionDirection,
+      options: { href?: AuthRoute; useExitOverlay: boolean },
+    ) => void
+  >(() => {});
+  const tryStartAuthCrossHistoryTimelineRef = useRef<() => void>(() => {});
 
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [transitionDirection, setTransitionDirection] =
@@ -183,8 +219,19 @@ export function SiteShell({ children }: { children: ReactNode }) {
   const [landingContentVersion, setLandingContentVersion] = useState(0);
   const [authCardSuppressed, setAuthCardSuppressed] = useState(false);
   const [authExitActive, setAuthExitActive] = useState(false);
+  const [authCrossActive, setAuthCrossActive] = useState(false);
+  const [authCrossHistoryExitActive, setAuthCrossHistoryExitActive] = useState(false);
+  const [authCrossHistoryExitDirection, setAuthCrossHistoryExitDirection] =
+    useState<SiteTransitionDirection | null>(null);
   const authCardSuppressedRef = useRef(false);
   const authExitActiveRef = useRef(false);
+  const authCrossActiveRef = useRef(false);
+  const authCrossHistoryExitActiveRef = useRef(false);
+  const authCrossHistoryTimelineStartedRef = useRef(false);
+  const pendingAuthCrossHistoryRef = useRef<{
+    from: SiteTransitionDirection;
+    to: SiteTransitionDirection;
+  } | null>(null);
 
   const syncAuthCardSuppressed = useCallback((value: boolean) => {
     authCardSuppressedRef.current = value;
@@ -196,16 +243,64 @@ export function SiteShell({ children }: { children: ReactNode }) {
     setAuthExitActive(value);
   }, []);
 
+  const syncAuthCrossActive = useCallback((value: boolean) => {
+    authCrossActiveRef.current = value;
+    setAuthCrossActive(value);
+  }, []);
+
+  const syncAuthCrossHistoryExitActive = useCallback((value: boolean) => {
+    authCrossHistoryExitActiveRef.current = value;
+    setAuthCrossHistoryExitActive(value);
+  }, []);
+
   const syncIsTransitioning = useCallback((value: boolean) => {
     isTransitioningRef.current = value;
     setIsTransitioning(value);
   }, []);
 
+  const bootstrapAuthCrossHistory = useCallback(
+    (transition: { from: SiteTransitionDirection; to: SiteTransitionDirection }) => {
+      if (pendingAuthCrossHistoryRef.current) return;
+
+      pendingAuthCrossHistoryRef.current = transition;
+      syncIsTransitioning(true);
+      setTransitionDirection(transition.to);
+      syncAuthCrossActive(true);
+      syncAuthCardSuppressed(true);
+      syncAuthCrossHistoryExitActive(true);
+      setAuthCrossHistoryExitDirection(transition.from);
+    },
+    [
+      syncIsTransitioning,
+      syncAuthCrossActive,
+      syncAuthCardSuppressed,
+      syncAuthCrossHistoryExitActive,
+    ],
+  );
+
+  const skipHistoryCrossDetection =
+    isTransitioningRef.current && authCrossActiveRef.current;
+
+  const authCrossHistoryTransition = skipHistoryCrossDetection
+    ? null
+    : getAuthCrossHistoryTransition(prevPathnameRef.current, pathname);
+
+  const historyCrossExitDirection =
+    authCrossHistoryExitDirection ?? authCrossHistoryTransition?.from ?? null;
+
+  const showHistoryCrossExitOverlay = historyCrossExitDirection !== null;
+
+  const effectiveAuthCardSuppressed =
+    authCardSuppressed || authCrossHistoryTransition !== null;
+
+  const bootstrapAuthCrossHistoryRef = useRef(bootstrapAuthCrossHistory);
+  bootstrapAuthCrossHistoryRef.current = bootstrapAuthCrossHistory;
+
   const clearPendingCardEnter = useCallback(() => {
     pendingCardEnterRef.current = false;
   }, []);
 
-  const triggerCardEnter = useCallback(() => {
+  const triggerCardEnter = useCallback((onComplete?: () => void) => {
     pendingCardEnterRef.current = true;
     syncAuthCardSuppressed(false);
     const card = authCardRef.current;
@@ -213,9 +308,10 @@ export function SiteShell({ children }: { children: ReactNode }) {
 
     const { reduceMotion } = mediaConditionsRef.current;
     gsap.set(card, { autoAlpha: 0, y: 12, visibility: "visible" });
-    animateCardEnter(card, reduceMotion, () =>
-      finishCardEnter(clearPendingCardEnter, syncIsTransitioning),
-    );
+    animateCardEnter(card, reduceMotion, () => {
+      finishCardEnter(clearPendingCardEnter, syncIsTransitioning);
+      onComplete?.();
+    });
   }, [clearPendingCardEnter, syncIsTransitioning, syncAuthCardSuppressed]);
 
   const registerAuthCard = useCallback(
@@ -233,9 +329,16 @@ export function SiteShell({ children }: { children: ReactNode }) {
         return;
       }
 
-      if (authExitActiveRef.current) {
-        gsap.set(element, { autoAlpha: 1, y: 0, visibility: "visible" });
-        tryStartReverseTimelineRef.current();
+      const historyCross = getAuthCrossHistoryTransition(
+        prevPathnameRef.current,
+        pathname,
+      );
+      if (
+        historyCross &&
+        !(isTransitioningRef.current && authCrossActiveRef.current)
+      ) {
+        bootstrapAuthCrossHistoryRef.current(historyCross);
+        gsap.set(element, { autoAlpha: 0, visibility: "hidden" });
         return;
       }
 
@@ -253,6 +356,21 @@ export function SiteShell({ children }: { children: ReactNode }) {
     },
     [pathname, syncIsTransitioning, clearPendingCardEnter],
   );
+
+  const registerAuthExitCard = useCallback((element: HTMLElement | null) => {
+    authExitCardRef.current = element;
+    if (!element) return;
+
+    gsap.set(element, { autoAlpha: 1, y: 0, visibility: "visible" });
+
+    if (authExitActiveRef.current) {
+      tryStartReverseTimelineRef.current();
+    }
+
+    if (authCrossHistoryExitActiveRef.current || pendingAuthCrossHistoryRef.current) {
+      tryStartAuthCrossHistoryTimelineRef.current();
+    }
+  }, []);
 
   const runAuthReverseTimelineRef = useRef<() => void>(() => {});
   const tryStartReverseTimelineRef = useRef<() => void>(() => {});
@@ -280,7 +398,7 @@ export function SiteShell({ children }: { children: ReactNode }) {
     const { isDesktop, reduceMotion } = mediaConditionsRef.current;
     const landing = landingContentRef.current;
     const dither = ditherLayerRef.current;
-    const card = authCardRef.current;
+    const card = authExitCardRef.current;
 
     const finishReverse = () => {
       activeTimelineRef.current = null;
@@ -360,13 +478,144 @@ export function SiteShell({ children }: { children: ReactNode }) {
   const tryStartReverseTimeline = useCallback(() => {
     if (!pendingReverseRef.current) return;
     if (!landingContentRef.current) return;
-    if (authExitActiveRef.current && !authCardRef.current) return;
+    if (authExitActiveRef.current && !authExitCardRef.current) return;
 
     pendingReverseRef.current = false;
     runAuthReverseTimelineRef.current();
   }, []);
 
   tryStartReverseTimelineRef.current = tryStartReverseTimeline;
+
+  const runAuthCrossTimeline = useCallback(
+    (
+      from: SiteTransitionDirection,
+      to: SiteTransitionDirection,
+      options: { href?: AuthRoute; useExitOverlay: boolean },
+    ) => {
+      activeTimelineRef.current?.kill();
+
+      const { isDesktop, reduceMotion } = mediaConditionsRef.current;
+      const card = options.useExitOverlay
+        ? authExitCardRef.current
+        : authCardRef.current;
+      const dither = ditherLayerRef.current;
+      const panel = revealPanelRef.current;
+      const toX = AUTH_TRANSITION[to].xPercent;
+      const panelLeft = AUTH_TRANSITION[to].panelSide === "right" ? "50%" : "0%";
+
+      const finishCross = () => {
+        activeTimelineRef.current = null;
+        authCrossHistoryTimelineStartedRef.current = false;
+        syncAuthCrossActive(false);
+        syncAuthCrossHistoryExitActive(false);
+        setAuthCrossHistoryExitDirection(null);
+        setTransitionDirection(null);
+        pendingTimelineRef.current = null;
+        pendingAuthCrossHistoryRef.current = null;
+        if (panel) gsap.set(panel, { clearProps: "left" });
+      };
+
+      const pushRoute = () => {
+        if (!options.href) return;
+        syncAuthCardSuppressed(true);
+        router.push(options.href);
+      };
+
+      if (reduceMotion) {
+        if (card) gsap.set(card, { autoAlpha: 0, visibility: "hidden" });
+        if (dither) gsap.set(dither, { xPercent: toX });
+        if (panel) gsap.set(panel, { left: panelLeft });
+        if (!options.useExitOverlay) pushRoute();
+        triggerCardEnter(finishCross);
+        return;
+      }
+
+      if (!isDesktop) {
+        const tl = gsap.timeline();
+        activeTimelineRef.current = tl;
+
+        tl.addLabel("exit", 0);
+
+        if (card) {
+          tl.to(
+            card,
+            { autoAlpha: 0, y: 12, duration: 0.35, ease: "power2.in" },
+            "exit",
+          );
+        }
+
+        if (!options.useExitOverlay) {
+          tl.add(pushRoute, card ? "exit+=0.35" : 0);
+        }
+
+        tl.add(() => triggerCardEnter(finishCross), card ? "exit+=0.4" : 0);
+        return;
+      }
+
+      const tl = gsap.timeline();
+      activeTimelineRef.current = tl;
+
+      tl.addLabel("exit", 0);
+
+      if (card) {
+        tl.to(
+          card,
+          { autoAlpha: 0, y: 12, duration: 0.35, ease: "power2.in" },
+          "exit",
+        );
+      }
+
+      tl.addLabel("slide", card ? "exit+=0.35" : "exit");
+
+      if (!options.useExitOverlay) {
+        tl.add(pushRoute, "slide");
+      }
+
+      if (dither) {
+        tl.to(
+          dither,
+          { xPercent: toX, duration: 0.6, ease: "power2.inOut" },
+          "slide",
+        );
+      }
+
+      if (panel) {
+        gsap.set(panel, {
+          left: AUTH_TRANSITION[from].panelSide === "right" ? "50%" : "0%",
+        });
+        tl.to(
+          panel,
+          { left: panelLeft, duration: 0.6, ease: "power2.inOut" },
+          "slide",
+        );
+      }
+
+      tl.add(() => triggerCardEnter(finishCross), "slide+=0.6");
+    },
+    [
+      router,
+      syncAuthCardSuppressed,
+      syncAuthCrossActive,
+      syncAuthCrossHistoryExitActive,
+      triggerCardEnter,
+    ],
+  );
+
+  runAuthCrossTimelineRef.current = runAuthCrossTimeline;
+
+  const tryStartAuthCrossHistoryTimeline = useCallback(() => {
+    const pending = pendingAuthCrossHistoryRef.current;
+    if (!pending) return;
+    if (authCrossHistoryExitActiveRef.current && !authExitCardRef.current) return;
+    if (authCrossHistoryTimelineStartedRef.current) return;
+
+    authCrossHistoryTimelineStartedRef.current = true;
+    runAuthCrossTimelineRef.current(pending.from, pending.to, {
+      useExitOverlay: true,
+    });
+  }, []);
+
+  tryStartAuthCrossHistoryTimelineRef.current = tryStartAuthCrossHistoryTimeline;
 
   const runAuthTimeline = useCallback(
     (direction: SiteTransitionDirection) => {
@@ -450,12 +699,35 @@ export function SiteShell({ children }: { children: ReactNode }) {
   useLayoutEffect(() => {
     const previousPath = prevPathnameRef.current;
     const previousDirection = authRouteDirection(previousPath);
+    const currentDirection = authRouteDirection(pathname);
 
     const pending = pendingTimelineRef.current;
-    if (pending && landingContentRef.current) {
+    if (pending && pending.kind === "landing" && landingContentRef.current) {
       const { direction } = pending;
       pendingTimelineRef.current = null;
       runAuthTimelineRef.current(direction);
+      prevPathnameRef.current = pathname;
+      return;
+    }
+
+    if (
+      authCrossHistoryTransition &&
+      !pendingTimelineRef.current &&
+      !pendingAuthCrossHistoryRef.current
+    ) {
+      bootstrapAuthCrossHistory(authCrossHistoryTransition);
+      prevPathnameRef.current = pathname;
+      return;
+    }
+
+    if (
+      previousDirection &&
+      currentDirection &&
+      previousDirection !== currentDirection &&
+      !pendingTimelineRef.current &&
+      !(isTransitioningRef.current && authCrossActiveRef.current)
+    ) {
+      bootstrapAuthCrossHistory({ from: previousDirection, to: currentDirection });
       prevPathnameRef.current = pathname;
       return;
     }
@@ -479,7 +751,18 @@ export function SiteShell({ children }: { children: ReactNode }) {
     }
 
     prevPathnameRef.current = pathname;
-  }, [pathname, landingContentVersion, landingExitActive, syncIsTransitioning, syncAuthExitActive]);
+  }, [
+    pathname,
+    landingContentVersion,
+    landingExitActive,
+    syncIsTransitioning,
+    syncAuthExitActive,
+    syncAuthCardSuppressed,
+    syncAuthCrossActive,
+    syncAuthCrossHistoryExitActive,
+    bootstrapAuthCrossHistory,
+    authCrossHistoryTransition,
+  ]);
 
   useLayoutEffect(() => {
     const direction = authRouteDirection(pathname);
@@ -534,11 +817,34 @@ export function SiteShell({ children }: { children: ReactNode }) {
 
           activeTimelineRef.current?.kill();
 
+          const current = authRouteDirection(pathname);
+
+          if (current && current !== direction) {
+            syncIsTransitioning(true);
+            setTransitionDirection(direction);
+            syncAuthCrossActive(true);
+            pendingTimelineRef.current = {
+              href,
+              direction,
+              kind: "auth-cross",
+              from: current,
+            };
+            runAuthCrossTimelineRef.current(current, direction, {
+              href,
+              useExitOverlay: false,
+            });
+            return;
+          }
+
+          if (current === direction) {
+            return;
+          }
+
           syncIsTransitioning(true);
           setTransitionDirection(direction);
           setLandingExitActive(true);
           syncAuthCardSuppressed(true);
-          pendingTimelineRef.current = { href, direction };
+          pendingTimelineRef.current = { href, direction, kind: "landing" };
 
           router.push(href);
         },
@@ -551,7 +857,14 @@ export function SiteShell({ children }: { children: ReactNode }) {
     },
     {
       scope: shellRef,
-      dependencies: [router, syncIsTransitioning, syncAuthCardSuppressed, pathname],
+      dependencies: [
+        router,
+        syncIsTransitioning,
+        syncAuthCardSuppressed,
+        syncAuthCrossActive,
+        syncAuthCrossHistoryExitActive,
+        pathname,
+      ],
     },
   );
 
@@ -564,12 +877,15 @@ export function SiteShell({ children }: { children: ReactNode }) {
 
   const activeRevealDirection: SiteTransitionDirection | null =
     authRouteDirection(pathname) ??
+    authCrossHistoryTransition?.to ??
     (isTransitioning ? transitionDirection : null);
 
   const showAuthReveal = activeRevealDirection !== null;
   const revealPanelSide = activeRevealDirection
     ? AUTH_TRANSITION[activeRevealDirection].panelSide
     : null;
+  const panelPositionControlled =
+    authCrossActive || authCrossHistoryTransition !== null;
 
   const showDither =
     pathname === "/" ||
@@ -581,7 +897,7 @@ export function SiteShell({ children }: { children: ReactNode }) {
     runTransition,
     isTransitioning,
     transitionDirection,
-    authCardSuppressed,
+    authCardSuppressed: effectiveAuthCardSuppressed,
     registerLandingContent,
     registerAuthCard,
   };
@@ -593,11 +909,12 @@ export function SiteShell({ children }: { children: ReactNode }) {
         className="relative min-h-screen overflow-hidden bg-white dark:bg-black"
       >
         <div
+          ref={revealPanelRef}
           className={cn(
             "absolute inset-y-0 z-0 hidden w-1/2 bg-white dark:bg-black",
             showAuthReveal && "lg:block",
-            revealPanelSide === "right" && "right-0",
-            revealPanelSide === "left" && "left-0",
+            !panelPositionControlled && revealPanelSide === "right" && "right-0",
+            !panelPositionControlled && revealPanelSide === "left" && "left-0",
           )}
           aria-hidden
         />
@@ -614,8 +931,17 @@ export function SiteShell({ children }: { children: ReactNode }) {
 
         <div className="relative z-10">
           {children}
+          {showHistoryCrossExitOverlay && historyCrossExitDirection ? (
+            <AuthExitOverlay
+              direction={historyCrossExitDirection}
+              registerAuthExitCard={registerAuthExitCard}
+            />
+          ) : null}
           {authExitActive && transitionDirection ? (
-            <AuthExitOverlay direction={transitionDirection} />
+            <AuthExitOverlay
+              direction={transitionDirection}
+              registerAuthExitCard={registerAuthExitCard}
+            />
           ) : null}
           {landingExitActive ? (
             <LandingExitOverlay registerLandingContent={registerLandingContent} />

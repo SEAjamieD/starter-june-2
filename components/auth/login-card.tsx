@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import { TransitionLink } from "@/components/site/transition-link";
 import { useRouter } from "next/navigation";
 import { useLayoutEffect, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -25,7 +25,11 @@ const loginSchema = z.object({
   password: z.string().min(8, "Password must be at least 8 characters."),
 });
 
-export function LoginCard() {
+export function LoginCard({
+  skipTransitionRegistration = false,
+}: {
+  skipTransitionRegistration?: boolean;
+}) {
   const router = useRouter();
   const { registerAuthCard, authCardSuppressed } = useSiteTransition();
   const cardWrapperRef = useRef<HTMLDivElement>(null);
@@ -33,9 +37,10 @@ export function LoginCard() {
   const [errors, setErrors] = useState<Partial<Record<"email" | "password", string>>>({});
 
   useLayoutEffect(() => {
+    if (skipTransitionRegistration) return;
     registerAuthCard(cardWrapperRef.current);
     return () => registerAuthCard(null);
-  }, [registerAuthCard]);
+  }, [registerAuthCard, skipTransitionRegistration]);
 
   const handleSubmit = async (formData: FormData) => {
     const values = {
@@ -74,7 +79,10 @@ export function LoginCard() {
   return (
     <div
       ref={cardWrapperRef}
-      className={cn("w-full max-w-md", authCardSuppressed && "invisible")}
+      className={cn(
+        "w-full max-w-md",
+        !skipTransitionRegistration && authCardSuppressed && "invisible",
+      )}
     >
       <Card className="w-full">
         <CardHeader>
@@ -112,9 +120,9 @@ export function LoginCard() {
           </form>
           <p className="mt-4 text-sm text-muted-foreground">
             Need an account?{" "}
-            <Link className="underline" href="/signup">
+            <TransitionLink className="underline" href="/signup" transitionDirection="signup">
               Sign up
-            </Link>
+            </TransitionLink>
           </p>
         </CardContent>
       </Card>

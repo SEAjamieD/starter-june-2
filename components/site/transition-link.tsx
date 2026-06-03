@@ -20,6 +20,8 @@ export function TransitionLink({
 }: TransitionLinkProps) {
   const { runTransition, isTransitioning } = useSiteTransition();
 
+  const hrefPath = typeof href === "string" ? href : href.pathname;
+
   return (
     <Link
       href={href}
@@ -29,7 +31,7 @@ export function TransitionLink({
 
         if (
           transitionDirection === "login" &&
-          href === "/login"
+          hrefPath === "/login"
         ) {
           event.preventDefault();
           runTransition("/login", "login");
@@ -38,7 +40,7 @@ export function TransitionLink({
 
         if (
           transitionDirection === "signup" &&
-          href === "/signup"
+          hrefPath === "/signup"
         ) {
           event.preventDefault();
           runTransition("/signup", "signup");
