@@ -44,11 +44,13 @@ type PendingTimeline = {
 
 type SiteTransitionContextValue = {
   runTransition: (href: AuthRoute, direction: SiteTransitionDirection) => void;
+  runHomeTransition: () => void;
   isTransitioning: boolean;
   transitionDirection: SiteTransitionDirection | null;
   authCardSuppressed: boolean;
   registerLandingContent: (element: HTMLElement | null) => void;
   registerAuthCard: (element: HTMLElement | null) => void;
+  registerAuthBackHome: (element: HTMLElement | null) => void;
 };
 
 const SiteTransitionContext = createContext<SiteTransitionContextValue | null>(null);
@@ -149,7 +151,7 @@ function AuthExitOverlay({
 
   return (
     <div className="pointer-events-none absolute inset-0 z-30">
-      <AuthShell side={side}>
+      <AuthShell side={side} showBackToHome={false}>
         <div ref={exitRef} className="w-full max-w-md">
           <Card skipTransitionRegistration />
         </div>
@@ -185,11 +187,16 @@ export function SiteShell({ children }: { children: ReactNode }) {
   const revealPanelRef = useRef<HTMLDivElement>(null);
   const landingContentRef = useRef<HTMLElement | null>(null);
   const authCardRef = useRef<HTMLElement | null>(null);
+  const authBackHomeRef = useRef<HTMLElement | null>(null);
   const authExitCardRef = useRef<HTMLElement | null>(null);
   const activeTimelineRef = useRef<gsap.core.Timeline | null>(null);
   const isTransitioningRef = useRef(false);
   const pendingTimelineRef = useRef<PendingTimeline | null>(null);
   const pendingReverseRef = useRef(false);
+  const pendingHomeLandingEnterRef = useRef(false);
+  const homeClickHasExitTargetRef = useRef(false);
+  const homeLandingEnterScheduledRef = useRef(false);
+  const clickHomeTransitionRef = useRef(false);
   const pendingCardEnterRef = useRef(false);
   const prevPathnameRef = useRef(pathname);
   const mediaConditionsRef = useRef<MediaConditions>({
@@ -200,6 +207,7 @@ export function SiteShell({ children }: { children: ReactNode }) {
   const runTransitionRef = useRef<
     (href: AuthRoute, direction: SiteTransitionDirection) => void
   >(() => {});
+  const runHomeTransitionRef = useRef<() => void>(() => {});
   const runAuthTimelineRef = useRef<(direction: SiteTransitionDirection) => void>(
     () => {},
   );
@@ -314,6 +322,15 @@ export function SiteShell({ children }: { children: ReactNode }) {
     });
   }, [clearPendingCardEnter, syncIsTransitioning, syncAuthCardSuppressed]);
 
+  const registerAuthBackHome = useCallback((element: HTMLElement | null) => {
+    authBackHomeRef.current = element;
+    if (!element) return;
+
+    if (!isTransitioningRef.current) {
+      gsap.set(element, { autoAlpha: 1, y: 0, visibility: "visible" });
+    }
+  }, []);
+
   const registerAuthCard = useCallback(
     (element: HTMLElement | null) => {
       authCardRef.current = element;
@@ -374,6 +391,8 @@ export function SiteShell({ children }: { children: ReactNode }) {
 
   const runAuthReverseTimelineRef = useRef<() => void>(() => {});
   const tryStartReverseTimelineRef = useRef<() => void>(() => {});
+  const runAuthHomeClickTimelineRef = useRef<() => void>(() => {});
+  const tryStartHomeLandingEnterRef = useRef<() => void>(() => {});
 
   const registerLandingContent = useCallback(
     (element: HTMLElement | null) => {
@@ -383,6 +402,9 @@ export function SiteShell({ children }: { children: ReactNode }) {
       if (pendingReverseRef.current) {
         gsap.set(element, { autoAlpha: 0 });
         tryStartReverseTimelineRef.current();
+      } else if (pendingHomeLandingEnterRef.current) {
+        gsap.set(element, { autoAlpha: 0 });
+        tryStartHomeLandingEnterRef.current();
       } else if (!isTransitioningRef.current) {
         gsap.set(element, { autoAlpha: 1 });
       }
@@ -402,6 +424,7 @@ export function SiteShell({ children }: { children: ReactNode }) {
 
     const finishReverse = () => {
       activeTimelineRef.current = null;
+      clickHomeTransitionRef.current = false;
       syncIsTransitioning(false);
       setTransitionDirection(null);
       setLandingExitActive(false);
@@ -474,6 +497,181 @@ export function SiteShell({ children }: { children: ReactNode }) {
   }, [syncIsTransitioning, syncAuthExitActive]);
 
   runAuthReverseTimelineRef.current = runAuthReverseTimeline;
+
+  const finishHomeClickTransition = useCallback(() => {
+    activeTimelineRef.current = null;
+    clickHomeTransitionRef.current = false;
+    pendingHomeLandingEnterRef.current = false;
+    homeLandingEnterScheduledRef.current = false;
+    syncIsTransitioning(false);
+    setTransitionDirection(null);
+  }, [syncIsTransitioning]);
+
+  const appendHomeLandingEnter = useCallback(
+    (landing: HTMLElement) => {
+      if (homeLandingEnterScheduledRef.current) return;
+
+      const { isDesktop, reduceMotion } = mediaConditionsRef.current;
+      const hasExitTarget = homeClickHasExitTargetRef.current;
+
+      if (reduceMotion) {
+        gsap.set(landing, { autoAlpha: 1 });
+        finishHomeClickTransition();
+        return;
+      }
+
+      pendingHomeLandingEnterRef.current = false;
+      homeLandingEnterScheduledRef.current = true;
+
+      const tl = activeTimelineRef.current;
+      if (!tl) {
+        gsap.fromTo(
+          landing,
+          { autoAlpha: 0, y: 12 },
+          {
+            autoAlpha: 1,
+            y: 0,
+            duration: 0.35,
+            ease: "power2.out",
+            onComplete: finishHomeClickTransition,
+          },
+        );
+        return;
+      }
+
+      if (!isDesktop) {
+        tl.fromTo(
+          landing,
+          { autoAlpha: 0, y: 12 },
+          {
+            autoAlpha: 1,
+            y: 0,
+            duration: 0.35,
+            ease: "power2.out",
+            onComplete: finishHomeClickTransition,
+          },
+          hasExitTarget ? "-=0.1" : 0,
+        );
+        return;
+      }
+
+      tl.fromTo(
+        landing,
+        { autoAlpha: 0, y: 12 },
+        {
+          autoAlpha: 1,
+          y: 0,
+          duration: 0.35,
+          ease: "power2.out",
+          onComplete: finishHomeClickTransition,
+        },
+        hasExitTarget ? "start+=0.35" : "-=0.25",
+      );
+    },
+    [finishHomeClickTransition],
+  );
+
+  const tryStartHomeLandingEnter = useCallback(() => {
+    if (!pendingHomeLandingEnterRef.current) return;
+    if (!landingContentRef.current) return;
+
+    gsap.set(landingContentRef.current, { autoAlpha: 0 });
+    appendHomeLandingEnter(landingContentRef.current);
+  }, [appendHomeLandingEnter]);
+
+  tryStartHomeLandingEnterRef.current = tryStartHomeLandingEnter;
+
+  const runAuthHomeClickTimeline = useCallback(() => {
+    activeTimelineRef.current?.kill();
+
+    const { isDesktop, reduceMotion } = mediaConditionsRef.current;
+    const card = authCardRef.current;
+    const footer = authBackHomeRef.current;
+    const dither = ditherLayerRef.current;
+    const hasExitTarget = Boolean(card || footer);
+    homeClickHasExitTargetRef.current = hasExitTarget;
+
+    pendingHomeLandingEnterRef.current = true;
+
+    if (reduceMotion) {
+      if (card) gsap.set(card, { autoAlpha: 0, visibility: "hidden" });
+      if (footer) gsap.set(footer, { autoAlpha: 0, visibility: "hidden" });
+      if (dither) gsap.set(dither, { xPercent: 0 });
+      router.push("/");
+      tryStartHomeLandingEnterRef.current();
+      return;
+    }
+
+    if (!isDesktop) {
+      const tl = gsap.timeline({
+        defaults: { ease: "power2.inOut" },
+      });
+      activeTimelineRef.current = tl;
+
+      if (card) {
+        tl.to(
+          card,
+          { autoAlpha: 0, y: 12, duration: 0.35, ease: "power2.in" },
+          0,
+        );
+      }
+
+      if (footer) {
+        tl.to(
+          footer,
+          { autoAlpha: 0, y: 12, duration: 0.35, ease: "power2.in" },
+          0,
+        );
+      }
+
+      const afterExit = hasExitTarget ? 0.35 : 0;
+      tl.add(() => router.push("/"), afterExit);
+      if (landingContentRef.current) {
+        appendHomeLandingEnter(landingContentRef.current);
+      }
+      return;
+    }
+
+    const tl = gsap.timeline({
+      defaults: { ease: "power2.inOut" },
+    });
+    activeTimelineRef.current = tl;
+
+    tl.addLabel("start", 0);
+
+    if (card) {
+      tl.to(
+        card,
+        { autoAlpha: 0, y: 12, duration: 0.35, ease: "power2.in" },
+        "start",
+      );
+    }
+
+    if (footer) {
+      tl.to(
+        footer,
+        { autoAlpha: 0, y: 12, duration: 0.35, ease: "power2.in" },
+        "start",
+      );
+    }
+
+    if (dither) {
+      tl.to(
+        dither,
+        { xPercent: 0, duration: 0.6 },
+        hasExitTarget ? "start+=0.15" : "start",
+      );
+    }
+
+    const pushAt = hasExitTarget ? "start+=0.35" : "start";
+    tl.add(() => router.push("/"), pushAt);
+
+    if (landingContentRef.current) {
+      appendHomeLandingEnter(landingContentRef.current);
+    }
+  }, [router, appendHomeLandingEnter]);
+
+  runAuthHomeClickTimelineRef.current = runAuthHomeClickTimeline;
 
   const tryStartReverseTimeline = useCallback(() => {
     if (!pendingReverseRef.current) return;
@@ -738,6 +936,15 @@ export function SiteShell({ children }: { children: ReactNode }) {
       !pendingTimelineRef.current &&
       !landingExitActive
     ) {
+      if (clickHomeTransitionRef.current) {
+        if (landingContentRef.current) {
+          gsap.set(landingContentRef.current, { autoAlpha: 0 });
+        }
+        tryStartHomeLandingEnterRef.current();
+        prevPathnameRef.current = pathname;
+        return;
+      }
+
       pendingReverseRef.current = true;
       syncIsTransitioning(true);
       setTransitionDirection(previousDirection);
@@ -809,6 +1016,18 @@ export function SiteShell({ children }: { children: ReactNode }) {
         shellRef,
       );
 
+      runHomeTransitionRef.current = contextSafe!(() => {
+        const direction = authRouteDirection(pathname);
+        if (!direction || isTransitioningRef.current) {
+          return;
+        }
+
+        clickHomeTransitionRef.current = true;
+        syncIsTransitioning(true);
+        setTransitionDirection(direction);
+        runAuthHomeClickTimelineRef.current();
+      });
+
       runTransitionRef.current = contextSafe!(
         (href: AuthRoute, direction: SiteTransitionDirection) => {
           if (isTransitioningRef.current) {
@@ -875,6 +1094,10 @@ export function SiteShell({ children }: { children: ReactNode }) {
     [],
   );
 
+  const runHomeTransition = useCallback(() => {
+    runHomeTransitionRef.current();
+  }, []);
+
   const activeRevealDirection: SiteTransitionDirection | null =
     authRouteDirection(pathname) ??
     authCrossHistoryTransition?.to ??
@@ -895,11 +1118,13 @@ export function SiteShell({ children }: { children: ReactNode }) {
 
   const contextValue: SiteTransitionContextValue = {
     runTransition,
+    runHomeTransition,
     isTransitioning,
     transitionDirection,
     authCardSuppressed: effectiveAuthCardSuppressed,
     registerLandingContent,
     registerAuthCard,
+    registerAuthBackHome,
   };
 
   return (

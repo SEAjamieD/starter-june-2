@@ -50,3 +50,22 @@ export function TransitionLink({
     />
   );
 }
+
+type BackToHomeLinkProps = Omit<ComponentProps<typeof Link>, "href">;
+
+export function BackToHomeLink({ onClick, ...props }: BackToHomeLinkProps) {
+  const { runHomeTransition, isTransitioning } = useSiteTransition();
+
+  return (
+    <Link
+      href="/"
+      onClick={(event) => {
+        onClick?.(event);
+        if (event.defaultPrevented || isTransitioning) return;
+        event.preventDefault();
+        runHomeTransition();
+      }}
+      {...props}
+    />
+  );
+}
