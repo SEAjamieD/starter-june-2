@@ -681,8 +681,7 @@ export function SiteShell({ children }: { children: ReactNode }) {
   const runAuthAppEnterTimeline = useCallback(() => {
     activeTimelineRef.current?.kill();
 
-    const direction = authRouteDirection(pathname);
-    if (!direction) return;
+    if (!authRouteDirection(pathname)) return;
 
     const { isDesktop, reduceMotion } = mediaConditionsRef.current;
     const card = authCardRef.current;
@@ -699,61 +698,26 @@ export function SiteShell({ children }: { children: ReactNode }) {
       setTransitionDirection(null);
     };
 
-    if (reduceMotion) {
+    if (reduceMotion || (!card && !footer && !dither)) {
       finishAndNavigate();
       return;
     }
 
-    const slideX =
-      typeof window !== "undefined" ? window.innerWidth * 0.55 : 400;
-
-    if (!isDesktop) {
-      const tl = gsap.timeline({
-        defaults: { ease: "power2.inOut" },
-        onComplete: finishAndNavigate,
-      });
-      activeTimelineRef.current = tl;
-
-      if (card) {
-        tl.to(
-          card,
-          { x: slideX, autoAlpha: 0, duration: 0.45, ease: "power2.in" },
-          0,
-        );
-      }
-
-      if (footer) {
-        tl.to(
-          footer,
-          { x: slideX, autoAlpha: 0, duration: 0.45, ease: "power2.in" },
-          0,
-        );
-      }
-
-      if (dither) {
-        tl.to(dither, { autoAlpha: 0, duration: 0.5 }, 0.1);
-      }
-
-      if (!card && !footer && !dither) {
-        finishAndNavigate();
-      }
-
-      return;
-    }
-
+    const slideX = window.innerWidth * 0.55;
     const tl = gsap.timeline({
       defaults: { ease: "power2.inOut" },
       onComplete: finishAndNavigate,
     });
     activeTimelineRef.current = tl;
 
-    tl.addLabel("start", 0);
+    const position = isDesktop ? "start" : 0;
+    if (isDesktop) tl.addLabel("start", 0);
 
     if (card) {
       tl.to(
         card,
         { x: slideX, autoAlpha: 0, duration: 0.45, ease: "power2.in" },
-        "start",
+        position,
       );
     }
 
@@ -761,29 +725,29 @@ export function SiteShell({ children }: { children: ReactNode }) {
       tl.to(
         footer,
         { x: slideX, autoAlpha: 0, duration: 0.45, ease: "power2.in" },
-        "start",
+        position,
       );
     }
 
-    if (panel) {
+    if (panel && isDesktop) {
       tl.to(panel, { autoAlpha: 0, duration: 0.35, ease: "power2.in" }, "start");
     }
 
     if (dither) {
-      tl.to(
-        dither,
-        {
-          xPercent: 120,
-          autoAlpha: 0,
-          duration: 0.7,
-          ease: "power2.inOut",
-        },
-        "start+=0.1",
-      );
-    }
-
-    if (!card && !footer && !dither) {
-      finishAndNavigate();
+      if (isDesktop) {
+        tl.to(
+          dither,
+          {
+            xPercent: 120,
+            autoAlpha: 0,
+            duration: 0.7,
+            ease: "power2.inOut",
+          },
+          "start+=0.1",
+        );
+      } else {
+        tl.to(dither, { autoAlpha: 0, duration: 0.5 }, 0.1);
+      }
     }
   }, [pathname, router, syncIsTransitioning]);
 

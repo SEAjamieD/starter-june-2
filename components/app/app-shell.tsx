@@ -1,6 +1,6 @@
 "use client";
 
-import { useLayoutEffect, useRef } from "react";
+import { useRef } from "react";
 import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
 
@@ -14,23 +14,19 @@ type AppShellProps = {
 
 export function AppShell({ children }: AppShellProps) {
   const shellRef = useRef<HTMLDivElement>(null);
-  const shouldAnimateEnterRef = useRef(false);
-
-  useLayoutEffect(() => {
-    shouldAnimateEnterRef.current =
-      sessionStorage.getItem(APP_ENTER_FLAG) === "1";
-  }, []);
 
   useGSAP(
     () => {
       const shell = shellRef.current;
       if (!shell) return;
 
+      const shouldAnimateEnter =
+        sessionStorage.getItem(APP_ENTER_FLAG) === "1";
       const reduceMotion = window.matchMedia(
         "(prefers-reduced-motion: reduce)",
       ).matches;
 
-      if (!shouldAnimateEnterRef.current || reduceMotion) {
+      if (!shouldAnimateEnter || reduceMotion) {
         sessionStorage.removeItem(APP_ENTER_FLAG);
         gsap.set(shell, { autoAlpha: 1, y: 0 });
         return;

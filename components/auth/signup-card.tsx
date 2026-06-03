@@ -1,7 +1,7 @@
 "use client";
 
 import { TransitionLink } from "@/components/site/transition-link";
-import { useLayoutEffect, useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState, type FormEvent } from "react";
 import { toast } from "sonner";
 import { z } from "zod";
 
@@ -44,7 +44,9 @@ export function SignupCard({
     return () => registerAuthCard(null);
   }, [registerAuthCard, skipTransitionRegistration]);
 
-  const handleSubmit = async (formData: FormData) => {
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const formData = new FormData(event.currentTarget);
     const values = {
       name: String(formData.get("name") ?? ""),
       email: String(formData.get("email") ?? ""),
@@ -92,7 +94,7 @@ export function SignupCard({
           <CardTitle>Sign up</CardTitle>
         </CardHeader>
         <CardContent>
-          <form action={handleSubmit}>
+          <form onSubmit={handleSubmit}>
             <FieldGroup>
               <Field>
                 <FieldLabel htmlFor="name">Name</FieldLabel>

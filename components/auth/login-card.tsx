@@ -76,7 +76,7 @@ export function LoginCard({
     });
 
     if (error) {
-      flushSync(() => setLoading(false));
+      setLoading(false);
       toast.error(error.message ?? "Could not log in.");
       return;
     }
