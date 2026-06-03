@@ -27,9 +27,21 @@ export function TransitionLink({
         onClick?.(event);
         if (event.defaultPrevented || isTransitioning) return;
 
-        if (transitionDirection === "login" && href === "/login") {
+        if (
+          transitionDirection === "login" &&
+          href === "/login"
+        ) {
           event.preventDefault();
           runTransition("/login", "login");
+          return;
+        }
+
+        if (
+          transitionDirection === "signup" &&
+          href === "/signup"
+        ) {
+          event.preventDefault();
+          runTransition("/signup", "signup");
         }
       }}
       {...props}

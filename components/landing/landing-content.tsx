@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { forwardRef } from "react";
 
 import { TransitionLink } from "@/components/site/transition-link";
@@ -25,11 +24,11 @@ export const LandingContent = forwardRef<HTMLElement>(function LandingContent(
               Log in
             </Button>
           </TransitionLink>
-          <Link href="/signup">
+          <TransitionLink href="/signup" transitionDirection="signup">
             <Button size="lg" variant="secondary" className="min-w-36">
               Sign up
             </Button>
-          </Link>
+          </TransitionLink>
         </div>
       </section>
     </div>

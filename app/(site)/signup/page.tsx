@@ -9,7 +9,7 @@ export const metadata: Metadata = {
 
 export default function SignupPage() {
   return (
-    <AuthShell>
+    <AuthShell side="left">
       <SignupCard />
     </AuthShell>
   );
