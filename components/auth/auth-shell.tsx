@@ -1,15 +1,12 @@
-import { ThemeToggle } from "@/components/layout/theme-toggle";
-
 type AuthShellProps = {
   children: React.ReactNode;
 };
 
 export function AuthShell({ children }: AuthShellProps) {
   return (
-    <main className="relative flex min-h-screen items-center justify-center bg-white px-4 dark:bg-black">
-      {children}
-      <div className="fixed right-4 bottom-4">
-        <ThemeToggle />
+    <main className="flex min-h-screen items-center justify-center bg-white px-4 dark:bg-black lg:bg-transparent lg:dark:bg-transparent">
+      <div className="flex w-full max-w-none lg:ml-auto lg:w-1/2 lg:justify-center lg:px-8">
+        {children}
       </div>
     </main>
   );

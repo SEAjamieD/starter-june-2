@@ -31,10 +31,9 @@ export function DitherBackdrop() {
         enableMouseInteraction={!reduceMotion}
         mouseRadius={0.3}
         colorNum={4}
-        colorIntensity={4}
         waveAmplitude={0.22}
         waveFrequency={4.6}
-        waveSpeed={0.05}
+        waveSpeed={0.03}
         pixelSize={2}
       />
     </div>

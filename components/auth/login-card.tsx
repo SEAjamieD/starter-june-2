@@ -2,10 +2,11 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { z } from "zod";
 
+import { useSiteTransition } from "@/components/site/site-transition";
 import { authClient } from "@/lib/auth-client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -17,6 +18,7 @@ import {
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
+import { cn } from "@/lib/utils";
 
 const loginSchema = z.object({
   email: z.string().email("Enter a valid email address."),
@@ -25,8 +27,15 @@ const loginSchema = z.object({
 
 export function LoginCard() {
   const router = useRouter();
+  const { registerAuthCard, authCardSuppressed } = useSiteTransition();
+  const cardWrapperRef = useRef<HTMLDivElement>(null);
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<Partial<Record<"email" | "password", string>>>({});
+
+  useLayoutEffect(() => {
+    registerAuthCard(cardWrapperRef.current);
+    return () => registerAuthCard(null);
+  }, [registerAuthCard]);
 
   const handleSubmit = async (formData: FormData) => {
     const values = {
@@ -63,47 +72,52 @@ export function LoginCard() {
   };
 
   return (
-    <Card className="w-full max-w-md">
-      <CardHeader>
-        <CardTitle>Log in</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <form action={handleSubmit}>
-          <FieldGroup>
-            <Field>
-              <FieldLabel htmlFor="email">Email</FieldLabel>
-              <Input id="email" name="email" type="email" autoComplete="email" required />
-              <FieldError>{errors.email}</FieldError>
-            </Field>
-            <Field>
-              <FieldLabel htmlFor="password">Password</FieldLabel>
-              <Input
-                id="password"
-                name="password"
-                type="password"
-                autoComplete="current-password"
-                required
-              />
-              <FieldError>{errors.password}</FieldError>
-            </Field>
-            <Button type="submit" className="w-full" disabled={loading}>
-              {loading ? (
-                <>
-                  <Spinner className="mr-2" /> Logging in…
-                </>
-              ) : (
-                "Log in"
-              )}
-            </Button>
-          </FieldGroup>
-        </form>
-        <p className="mt-4 text-sm text-muted-foreground">
-          Need an account?{" "}
-          <Link className="underline" href="/signup">
-            Sign up
-          </Link>
-        </p>
-      </CardContent>
-    </Card>
+    <div
+      ref={cardWrapperRef}
+      className={cn("w-full max-w-md", authCardSuppressed && "invisible")}
+    >
+      <Card className="w-full">
+        <CardHeader>
+          <CardTitle>Log in</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <form action={handleSubmit}>
+            <FieldGroup>
+              <Field>
+                <FieldLabel htmlFor="email">Email</FieldLabel>
+                <Input id="email" name="email" type="email" autoComplete="email" required />
+                <FieldError>{errors.email}</FieldError>
+              </Field>
+              <Field>
+                <FieldLabel htmlFor="password">Password</FieldLabel>
+                <Input
+                  id="password"
+                  name="password"
+                  type="password"
+                  autoComplete="current-password"
+                  required
+                />
+                <FieldError>{errors.password}</FieldError>
+              </Field>
+              <Button type="submit" className="w-full" disabled={loading}>
+                {loading ? (
+                  <>
+                    <Spinner className="mr-2" /> Logging in…
+                  </>
+                ) : (
+                  "Log in"
+                )}
+              </Button>
+            </FieldGroup>
+          </form>
+          <p className="mt-4 text-sm text-muted-foreground">
+            Need an account?{" "}
+            <Link className="underline" href="/signup">
+              Sign up
+            </Link>
+          </p>
+        </CardContent>
+      </Card>
+    </div>
   );
 }
