@@ -1,7 +1,6 @@
 "use client";
 
 import { TransitionLink } from "@/components/site/transition-link";
-import { useRouter } from "next/navigation";
 import { useLayoutEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { z } from "zod";
@@ -31,8 +30,8 @@ export function SignupCard({
 }: {
   skipTransitionRegistration?: boolean;
 }) {
-  const router = useRouter();
-  const { registerAuthCard, authCardSuppressed } = useSiteTransition();
+  const { registerAuthCard, authCardSuppressed, runAppEnterTransition, isTransitioning } =
+    useSiteTransition();
   const cardWrapperRef = useRef<HTMLDivElement>(null);
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<
@@ -71,15 +70,13 @@ export function SignupCard({
       password: parsed.data.password,
     });
 
-    setLoading(false);
-
     if (error) {
+      setLoading(false);
       toast.error(error.message ?? "Could not sign up.");
       return;
     }
 
-    router.push("/dashboard");
-    router.refresh();
+    runAppEnterTransition();
   };
 
   return (
@@ -99,24 +96,46 @@ export function SignupCard({
             <FieldGroup>
               <Field>
                 <FieldLabel htmlFor="name">Name</FieldLabel>
-                <Input id="name" name="name" autoComplete="name" required />
+                <Input
+                  id="name"
+                  name="name"
+                  autoComplete="name"
+                  required
+                  disabled={loading || isTransitioning}
+                />
                 <FieldError>{errors.name}</FieldError>
               </Field>
               <Field>
                 <FieldLabel htmlFor="email">Email</FieldLabel>
-                <Input id="email" name="email" type="email" autoComplete="email" required />
+                <Input
+                  id="email"
+                  name="email"
+                  type="email"
+                  autoComplete="email"
+                  required
+                  disabled={loading || isTransitioning}
+                />
                 <FieldError>{errors.email}</FieldError>
               </Field>
               <Field>
                 <FieldLabel htmlFor="password">Password</FieldLabel>
-                <Input id="password" name="password" type="password" required />
+                <Input
+                  id="password"
+                  name="password"
+                  type="password"
+                  required
+                  disabled={loading || isTransitioning}
+                />
                 <FieldError>{errors.password}</FieldError>
               </Field>
-              <Button type="submit" className="w-full" disabled={loading}>
-                {loading ? (
-                  <>
-                    <Spinner className="mr-2" /> Signing up…
-                  </>
+              <Button
+                type="submit"
+                className="w-full"
+                disabled={loading || isTransitioning}
+                aria-busy={loading || isTransitioning}
+              >
+                {loading || isTransitioning ? (
+                  <Spinner className="size-4" />
                 ) : (
                   "Create account"
                 )}

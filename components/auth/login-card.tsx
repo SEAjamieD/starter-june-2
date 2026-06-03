@@ -1,8 +1,8 @@
 "use client";
 
 import { TransitionLink } from "@/components/site/transition-link";
-import { useRouter } from "next/navigation";
-import { useLayoutEffect, useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState, type FormEvent } from "react";
+import { flushSync } from "react-dom";
 import { toast } from "sonner";
 import { z } from "zod";
 
@@ -25,13 +25,15 @@ const loginSchema = z.object({
   password: z.string().min(8, "Password must be at least 8 characters."),
 });
 
+const MIN_LOGIN_LOADING_MS = 3000;
+
 export function LoginCard({
   skipTransitionRegistration = false,
 }: {
   skipTransitionRegistration?: boolean;
 }) {
-  const router = useRouter();
-  const { registerAuthCard, authCardSuppressed } = useSiteTransition();
+  const { registerAuthCard, authCardSuppressed, runAppEnterTransition, isTransitioning } =
+    useSiteTransition();
   const cardWrapperRef = useRef<HTMLDivElement>(null);
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<Partial<Record<"email" | "password", string>>>({});
@@ -42,7 +44,9 @@ export function LoginCard({
     return () => registerAuthCard(null);
   }, [registerAuthCard, skipTransitionRegistration]);
 
-  const handleSubmit = async (formData: FormData) => {
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const formData = new FormData(event.currentTarget);
     const values = {
       email: String(formData.get("email") ?? ""),
       password: String(formData.get("password") ?? ""),
@@ -57,23 +61,29 @@ export function LoginCard({
       return;
     }
 
-    setErrors({});
-    setLoading(true);
+    flushSync(() => {
+      setErrors({});
+      setLoading(true);
+    });
+
+    const minLoadingDelay = new Promise<void>((resolve) =>
+      setTimeout(resolve, MIN_LOGIN_LOADING_MS),
+    );
 
     const { error } = await authClient.signIn.email({
       email: parsed.data.email,
       password: parsed.data.password,
     });
 
-    setLoading(false);
-
     if (error) {
+      flushSync(() => setLoading(false));
       toast.error(error.message ?? "Could not log in.");
       return;
     }
 
-    router.push("/dashboard");
-    router.refresh();
+    await minLoadingDelay;
+
+    runAppEnterTransition();
   };
 
   return (
@@ -89,11 +99,18 @@ export function LoginCard({
           <CardTitle>Log in</CardTitle>
         </CardHeader>
         <CardContent>
-          <form action={handleSubmit}>
+          <form onSubmit={handleSubmit}>
             <FieldGroup>
               <Field>
                 <FieldLabel htmlFor="email">Email</FieldLabel>
-                <Input id="email" name="email" type="email" autoComplete="email" required />
+                <Input
+                  id="email"
+                  name="email"
+                  type="email"
+                  autoComplete="email"
+                  required
+                  disabled={loading || isTransitioning}
+                />
                 <FieldError>{errors.email}</FieldError>
               </Field>
               <Field>
@@ -104,14 +121,18 @@ export function LoginCard({
                   type="password"
                   autoComplete="current-password"
                   required
+                  disabled={loading || isTransitioning}
                 />
                 <FieldError>{errors.password}</FieldError>
               </Field>
-              <Button type="submit" className="w-full" disabled={loading}>
-                {loading ? (
-                  <>
-                    <Spinner className="mr-2" /> Logging in…
-                  </>
+              <Button
+                type="submit"
+                className="w-full"
+                disabled={loading || isTransitioning}
+                aria-busy={loading || isTransitioning}
+              >
+                {loading || isTransitioning ? (
+                  <Spinner className="size-4" />
                 ) : (
                   "Log in"
                 )}

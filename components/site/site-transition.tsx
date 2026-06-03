@@ -42,9 +42,12 @@ type PendingTimeline = {
   from?: SiteTransitionDirection;
 };
 
+export const APP_ENTER_FLAG = "app-enter";
+
 type SiteTransitionContextValue = {
   runTransition: (href: AuthRoute, direction: SiteTransitionDirection) => void;
   runHomeTransition: () => void;
+  runAppEnterTransition: () => void;
   isTransitioning: boolean;
   transitionDirection: SiteTransitionDirection | null;
   authCardSuppressed: boolean;
@@ -208,6 +211,8 @@ export function SiteShell({ children }: { children: ReactNode }) {
     (href: AuthRoute, direction: SiteTransitionDirection) => void
   >(() => {});
   const runHomeTransitionRef = useRef<() => void>(() => {});
+  const runAppEnterTransitionRef = useRef<() => void>(() => {});
+  const runAuthAppEnterTimelineRef = useRef<() => void>(() => {});
   const runAuthTimelineRef = useRef<(direction: SiteTransitionDirection) => void>(
     () => {},
   );
@@ -673,6 +678,117 @@ export function SiteShell({ children }: { children: ReactNode }) {
 
   runAuthHomeClickTimelineRef.current = runAuthHomeClickTimeline;
 
+  const runAuthAppEnterTimeline = useCallback(() => {
+    activeTimelineRef.current?.kill();
+
+    const direction = authRouteDirection(pathname);
+    if (!direction) return;
+
+    const { isDesktop, reduceMotion } = mediaConditionsRef.current;
+    const card = authCardRef.current;
+    const footer = authBackHomeRef.current;
+    const dither = ditherLayerRef.current;
+    const panel = revealPanelRef.current;
+
+    const finishAndNavigate = () => {
+      sessionStorage.setItem(APP_ENTER_FLAG, "1");
+      router.push("/dashboard");
+      router.refresh();
+      activeTimelineRef.current = null;
+      syncIsTransitioning(false);
+      setTransitionDirection(null);
+    };
+
+    if (reduceMotion) {
+      finishAndNavigate();
+      return;
+    }
+
+    const slideX =
+      typeof window !== "undefined" ? window.innerWidth * 0.55 : 400;
+
+    if (!isDesktop) {
+      const tl = gsap.timeline({
+        defaults: { ease: "power2.inOut" },
+        onComplete: finishAndNavigate,
+      });
+      activeTimelineRef.current = tl;
+
+      if (card) {
+        tl.to(
+          card,
+          { x: slideX, autoAlpha: 0, duration: 0.45, ease: "power2.in" },
+          0,
+        );
+      }
+
+      if (footer) {
+        tl.to(
+          footer,
+          { x: slideX, autoAlpha: 0, duration: 0.45, ease: "power2.in" },
+          0,
+        );
+      }
+
+      if (dither) {
+        tl.to(dither, { autoAlpha: 0, duration: 0.5 }, 0.1);
+      }
+
+      if (!card && !footer && !dither) {
+        finishAndNavigate();
+      }
+
+      return;
+    }
+
+    const tl = gsap.timeline({
+      defaults: { ease: "power2.inOut" },
+      onComplete: finishAndNavigate,
+    });
+    activeTimelineRef.current = tl;
+
+    tl.addLabel("start", 0);
+
+    if (card) {
+      tl.to(
+        card,
+        { x: slideX, autoAlpha: 0, duration: 0.45, ease: "power2.in" },
+        "start",
+      );
+    }
+
+    if (footer) {
+      tl.to(
+        footer,
+        { x: slideX, autoAlpha: 0, duration: 0.45, ease: "power2.in" },
+        "start",
+      );
+    }
+
+    if (panel) {
+      tl.to(panel, { autoAlpha: 0, duration: 0.35, ease: "power2.in" }, "start");
+    }
+
+    if (dither) {
+      tl.to(
+        dither,
+        {
+          xPercent: 120,
+          autoAlpha: 0,
+          duration: 0.7,
+          ease: "power2.inOut",
+        },
+        "start+=0.1",
+      );
+    }
+
+    if (!card && !footer && !dither) {
+      finishAndNavigate();
+    }
+  }, [pathname, router, syncIsTransitioning]);
+
+  runAuthAppEnterTimelineRef.current = runAuthAppEnterTimeline;
+
   const tryStartReverseTimeline = useCallback(() => {
     if (!pendingReverseRef.current) return;
     if (!landingContentRef.current) return;
@@ -1028,6 +1144,18 @@ export function SiteShell({ children }: { children: ReactNode }) {
         runAuthHomeClickTimelineRef.current();
       });
 
+      runAppEnterTransitionRef.current = contextSafe!(() => {
+        const direction = authRouteDirection(pathname);
+        if (!direction || isTransitioningRef.current) {
+          return;
+        }
+
+        activeTimelineRef.current?.kill();
+        syncIsTransitioning(true);
+        setTransitionDirection(direction);
+        runAuthAppEnterTimelineRef.current();
+      });
+
       runTransitionRef.current = contextSafe!(
         (href: AuthRoute, direction: SiteTransitionDirection) => {
           if (isTransitioningRef.current) {
@@ -1098,6 +1226,10 @@ export function SiteShell({ children }: { children: ReactNode }) {
     runHomeTransitionRef.current();
   }, []);
 
+  const runAppEnterTransition = useCallback(() => {
+    runAppEnterTransitionRef.current();
+  }, []);
+
   const activeRevealDirection: SiteTransitionDirection | null =
     authRouteDirection(pathname) ??
     authCrossHistoryTransition?.to ??
@@ -1119,6 +1251,7 @@ export function SiteShell({ children }: { children: ReactNode }) {
   const contextValue: SiteTransitionContextValue = {
     runTransition,
     runHomeTransition,
+    runAppEnterTransition,
     isTransitioning,
     transitionDirection,
     authCardSuppressed: effectiveAuthCardSuppressed,
