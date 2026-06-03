@@ -16,7 +16,7 @@ export function AuthShell({
     <main className="relative flex min-h-screen items-center justify-center bg-white px-4 dark:bg-black lg:bg-transparent lg:dark:bg-transparent">
       <div
         className={cn(
-          "flex w-full max-w-none lg:w-1/2 lg:justify-center lg:px-8",
+          "flex w-full max-w-none justify-center lg:w-1/2 lg:px-8",
           side === "right" ? "lg:ml-auto" : "lg:mr-auto",
         )}
       >
